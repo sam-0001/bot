@@ -87,6 +87,22 @@ def get_cached_assignment_id(year, branch, subject, assignment_number):
     result = cursor.fetchone()
     conn.close()
     return result[0] if result else None
+    
+def get_drive_service():
+    """Initializes and returns the Google Drive API service from an environment variable."""
+
+    # --- TEMPORARY DEBUGGING ---
+    print("--- STARTING DEBUG ---")
+    sa_json_content = os.getenv("SERVICE_ACCOUNT_JSON")
+    print(f"Type of content: {type(sa_json_content)}")
+    print(f"Content of SERVICE_ACCOUNT_JSON: -->{sa_json_content}<--")
+    print("--- ENDING DEBUG ---")
+    # --- END TEMPORARY DEBUGGING ---
+
+    global DRIVE_SERVICE
+    if DRIVE_SERVICE:
+        return DRIVE_SERVICE
+    try:
 
 def cache_assignment_id(year, branch, subject, assignment_number, file_id):
     conn = sqlite3.connect(DB_FILE)
