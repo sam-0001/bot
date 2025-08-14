@@ -25,14 +25,13 @@ from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload
 
 # --- Configuration and Setup ---
-# NEW: Use a data directory that works with Render's persistent disk
+# Use a data directory that works with Render's persistent disk
 DATA_DIR = Path(os.getenv("RENDER_DISK_PATH", "."))
-#DATA_DIR.mkdir(parents=True, exist_ok=True) # Ensure the directory exists
 
 load_dotenv()
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 GOOGLE_DRIVE_ROOT_FOLDER_ID = os.getenv("GOOGLE_DRIVE_ROOT_FOLDER_ID")
-# NEW: Get the entire service account JSON from an environment variable
+# Get the entire service account JSON from an environment variable
 SERVICE_ACCOUNT_JSON = os.getenv("SERVICE_ACCOUNT_JSON")
 
 # Check for essential environment variables
@@ -56,7 +55,6 @@ def escape_markdown(text: str) -> str:
     return re.sub(f'([{re.escape(escape_chars)}])', r'\\\1', text)
 
 # --- Database Management (Caching with Year) ---
-# MODIFIED: Use the DATA_DIR path for the database file
 DB_FILE = DATA_DIR / "file_cache.db"
 
 def setup_database():
@@ -87,22 +85,6 @@ def get_cached_assignment_id(year, branch, subject, assignment_number):
     result = cursor.fetchone()
     conn.close()
     return result[0] if result else None
-    
-def get_drive_service():
-    """Initializes and returns the Google Drive API service from an environment variable."""
-
-    # --- TEMPORARY DEBUGGING ---
-    print("--- STARTING DEBUG ---")
-    sa_json_content = os.getenv("SERVICE_ACCOUNT_JSON")
-    print(f"Type of content: {type(sa_json_content)}")
-    print(f"Content of SERVICE_ACCOUNT_JSON: -->{sa_json_content}<--")
-    print("--- ENDING DEBUG ---")
-    # --- END TEMPORARY DEBUGGING ---
-
-    global DRIVE_SERVICE
-    if DRIVE_SERVICE:
-        return DRIVE_SERVICE
-    try:
 
 def cache_assignment_id(year, branch, subject, assignment_number, file_id):
     conn = sqlite3.connect(DB_FILE)
@@ -141,6 +123,15 @@ DRIVE_SERVICE = None
 
 def get_drive_service():
     """Initializes and returns the Google Drive API service from an environment variable."""
+    
+    # --- TEMPORARY DEBUGGING ---
+    print("--- STARTING DEBUG ---")
+    sa_json_content = os.getenv("SERVICE_ACCOUNT_JSON")
+    print(f"Type of content: {type(sa_json_content)}")
+    print(f"Content of SERVICE_ACCOUNT_JSON: -->{sa_json_content}<--")
+    print("--- ENDING DEBUG ---")
+    # --- END TEMPORARY DEBUGGING ---
+
     global DRIVE_SERVICE
     if DRIVE_SERVICE:
         return DRIVE_SERVICE
