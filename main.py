@@ -31,12 +31,10 @@ DATA_DIR = Path(os.getenv("RENDER_DISK_PATH", "."))
 load_dotenv()
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 GOOGLE_DRIVE_ROOT_FOLDER_ID = os.getenv("GOOGLE_DRIVE_ROOT_FOLDER_ID")
-# Get the entire service account JSON from an environment variable
-SERVICE_ACCOUNT_JSON = os.getenv("SERVICE_ACCOUNT_JSON")
 
 # Check for essential environment variables
-if not all([TELEGRAM_BOT_TOKEN, GOOGLE_DRIVE_ROOT_FOLDER_ID, SERVICE_ACCOUNT_JSON]):
-    raise ValueError("One or more required environment variables are missing (TELEGRAM_BOT_TOKEN, GOOGLE_DRIVE_ROOT_FOLDER_ID, SERVICE_ACCOUNT_JSON).")
+if not all([TELEGRAM_BOT_TOKEN, GOOGLE_DRIVE_ROOT_FOLDER_ID]):
+    raise ValueError("TELEGRAM_BOT_TOKEN or GOOGLE_DRIVE_ROOT_FOLDER_ID is missing from your environment variables.")
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
@@ -122,34 +120,35 @@ SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 DRIVE_SERVICE = None
 
 def get_drive_service():
-    """Initializes and returns the Google Drive API service from an environment variable."""
-    
-    # --- TEMPORARY DEBUGGING ---
-    print("--- STARTING DEBUG ---")
-    sa_json_content = os.getenv("SERVICE_ACCOUNT_JSON")
-    print(f"Type of content: {type(sa_json_content)}")
-    print(f"Content of SERVICE_ACCOUNT_JSON: -->{sa_json_content}<--")
-    print("--- ENDING DEBUG ---")
-    # --- END TEMPORARY DEBUGGING ---
-
+    """Initializes and returns the Google Drive API service from a secret file path."""
     global DRIVE_SERVICE
     if DRIVE_SERVICE:
         return DRIVE_SERVICE
+
+    # On Render, secret files are mounted at /etc/secrets/<filename>
+    # The filename must match the one you gave it in the Render dashboard.
+    secret_file_path = Path("/etc/secrets/service_account.json")
+
     try:
         from google.oauth2 import service_account
-        # Load credentials from the environment variable string
-        creds_json = json.loads(SERVICE_ACCOUNT_JSON)
-        creds = service_account.Credentials.from_service_account_info(
-            creds_json, scopes=SCOPES)
+        
+        if not secret_file_path.is_file():
+            logger.error(f"Secret file not found at {secret_file_path}")
+            return None
+
+        creds = service_account.Credentials.from_service_account_file(
+            secret_file_path, scopes=SCOPES)
         service = build("drive", "v3", credentials=creds)
         DRIVE_SERVICE = service
-        logger.info("Google Drive service initialized successfully.")
+        logger.info("Google Drive service initialized successfully from file path.")
         return service
+        
     except Exception as e:
-        logger.error(f"An error occurred initializing the Drive service: {e}")
+        logger.error(f"An error occurred initializing the Drive service from file: {e}")
         return None
 
-# --- Google Drive Helper Functions (No changes needed here) ---
+
+# --- Google Drive Helper Functions ---
 async def find_item_id_in_parent(name, parent_id, is_folder=True):
     service = get_drive_service()
     if not service: return None
@@ -199,7 +198,7 @@ async def resolve_path_to_id(path_parts):
         current_id = next_id
     return current_id
 
-# --- Command Handlers (with file-sending fix) ---
+# --- Command Handlers ---
 async def check_user_setup(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     if 'year' not in context.user_data:
         await update.message.reply_text("Welcome\\! Please start by using the /start command to set your year and name\\.")
@@ -347,6 +346,9 @@ async def get_assignment(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     service = get_drive_service()
+    if not service:
+        await placeholder_message.edit_text("❌ Could not connect to Google Drive service.", parse_mode='MarkdownV2')
+        return
     query = f"'{assignments_folder_id}' in parents and trashed = false and name contains 'assignment_{assignment_number}'"
     response = service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
     files = response.get('files', [])
@@ -418,6 +420,9 @@ async def get_note(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     service = get_drive_service()
+    if not service:
+        await placeholder_message.edit_text("❌ Could not connect to Google Drive service.", parse_mode='MarkdownV2')
+        return
     query = f"'{notes_folder_id}' in parents and trashed = false and (name contains 'unit_{note_number}' or name contains 'note_{note_number}')"
     response = service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
     files = response.get('files', [])
