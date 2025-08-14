@@ -27,7 +27,7 @@ from googleapiclient.http import MediaIoBaseDownload
 # --- Configuration and Setup ---
 # NEW: Use a data directory that works with Render's persistent disk
 DATA_DIR = Path(os.getenv("RENDER_DISK_PATH", "."))
-DATA_DIR.mkdir(parents=True, exist_ok=True) # Ensure the directory exists
+#DATA_DIR.mkdir(parents=True, exist_ok=True) # Ensure the directory exists
 
 load_dotenv()
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
