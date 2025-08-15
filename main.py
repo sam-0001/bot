@@ -25,9 +25,8 @@ from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload
 
 # --- Configuration and Setup ---
-# Railway provides the path to the persistent volume in this variable
+# UPDATED: Path for Railway persistent storage
 DATA_DIR = Path(os.getenv("RAILWAY_VOLUME_MOUNT_PATH", ".")) / "bot_data"
-# This will create /data/bot_data inside the volume, which is a permitted operation
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 load_dotenv()
@@ -64,56 +63,56 @@ def setup_database():
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS assignment_cache (
-            id INTEGER PRIMARY KEY, year TEXT, branch TEXT, subject TEXT, assignment_number INTEGER,
-            telegram_file_id TEXT, UNIQUE(year, branch, subject, assignment_number)
+            id INTEGER PRIMARY KEY, year TEXT, group_name TEXT, subject TEXT, assignment_number INTEGER,
+            telegram_file_id TEXT, UNIQUE(year, group_name, subject, assignment_number)
         )""")
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS note_cache (
-            id INTEGER PRIMARY KEY, year TEXT, branch TEXT, subject TEXT, note_number INTEGER,
-            telegram_file_id TEXT, UNIQUE(year, branch, subject, note_number)
+            id INTEGER PRIMARY KEY, year TEXT, group_name TEXT, subject TEXT, note_number INTEGER,
+            telegram_file_id TEXT, UNIQUE(year, group_name, subject, note_number)
         )""")
     conn.commit()
     conn.close()
     logger.info(f"Database initialized at: {DB_FILE}")
 
-def get_cached_assignment_id(year, branch, subject, assignment_number):
+def get_cached_assignment_id(year, group_name, subject, assignment_number):
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT telegram_file_id FROM assignment_cache WHERE year = ? AND branch = ? AND subject = ? AND assignment_number = ?",
-        (year, branch.upper(), subject.upper(), assignment_number)
+        "SELECT telegram_file_id FROM assignment_cache WHERE year = ? AND group_name = ? AND subject = ? AND assignment_number = ?",
+        (year, group_name.upper(), subject.upper(), assignment_number)
     )
     result = cursor.fetchone()
     conn.close()
     return result[0] if result else None
 
-def cache_assignment_id(year, branch, subject, assignment_number, file_id):
+def cache_assignment_id(year, group_name, subject, assignment_number, file_id):
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT OR REPLACE INTO assignment_cache (year, branch, subject, assignment_number, telegram_file_id) VALUES (?, ?, ?, ?, ?)",
-        (year, branch.upper(), subject.upper(), assignment_number, file_id)
+        "INSERT OR REPLACE INTO assignment_cache (year, group_name, subject, assignment_number, telegram_file_id) VALUES (?, ?, ?, ?, ?)",
+        (year, group_name.upper(), subject.upper(), assignment_number, file_id)
     )
     conn.commit()
     conn.close()
 
-def get_cached_note_id(year, branch, subject, note_number):
+def get_cached_note_id(year, group_name, subject, note_number):
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT telegram_file_id FROM note_cache WHERE year = ? AND branch = ? AND subject = ? AND note_number = ?",
-        (year, branch.upper(), subject.upper(), note_number)
+        "SELECT telegram_file_id FROM note_cache WHERE year = ? AND group_name = ? AND subject = ? AND note_number = ?",
+        (year, group_name.upper(), subject.upper(), note_number)
     )
     result = cursor.fetchone()
     conn.close()
     return result[0] if result else None
 
-def cache_note_id(year, branch, subject, note_number, file_id):
+def cache_note_id(year, group_name, subject, note_number, file_id):
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT OR REPLACE INTO note_cache (year, branch, subject, note_number, telegram_file_id) VALUES (?, ?, ?, ?, ?)",
-        (year, branch.upper(), subject.upper(), note_number, file_id)
+        "INSERT OR REPLACE INTO note_cache (year, group_name, subject, note_number, telegram_file_id) VALUES (?, ?, ?, ?, ?)",
+        (year, group_name.upper(), subject.upper(), note_number, file_id)
     )
     conn.commit()
     conn.close()
@@ -129,7 +128,6 @@ def get_drive_service():
         return DRIVE_SERVICE
     try:
         from google.oauth2 import service_account
-        # Load credentials from the environment variable string
         creds_json = json.loads(SERVICE_ACCOUNT_JSON)
         creds = service_account.Credentials.from_service_account_info(
             creds_json, scopes=SCOPES)
@@ -231,91 +229,151 @@ async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     )
     return MAIN_MENU
 
+# UPDATED: Help command is now dynamic
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_user_setup(update, context): return
+    
     name = context.user_data.get('name', 'User')
     year_display = context.user_data.get('year_display', 'N/A')
+    year = context.user_data.get('year')
+
+    if year == '1st_Year':
+        group_cmd = "divisions"
+        group_name = "DIVISION"
+        group_name_plural = "Divisions"
+    else:
+        group_cmd = "branches"
+        group_name = "BRANCH"
+        group_name_plural = "Branches"
+    
     help_text = (
         f"👋 Hello {escape_markdown(name)}\\! Your current year is set to *{escape_markdown(year_display)}*\\.\n\n"
         "*Available Commands:*\n"
-        "• `/branches` \\- Lists branches for your year\\.\n"
-        "• `/subjects <BRANCH>` \\- Lists subjects for a branch\\.\n"
-        "• `/assignments <BRANCH> <SUBJECT>` \\- Lists available assignment numbers\\.\n"
-        "• `/notes <BRANCH> <SUBJECT>` \\- Lists available note/unit numbers\\.\n"
-        "• `/get <BRANCH> <SUBJECT> <NUMBER>` \\- Fetches an assignment file\\.\n"
-        "• `/getnote <BRANCH> <SUBJECT> <NUMBER>` \\- Fetches a note/unit file\\.\n"
+        f"• `/{group_cmd}` \\- Lists available {group_name_plural}\\.\n"
+        f"• `/subjects <{group_name}>` \\- Lists subjects for a {group_name.lower()}\\.\n"
+        f"• `/assignments <{group_name}> <SUBJECT>` \\- Lists available assignment numbers\\.\n"
+        f"• `/notes <{group_name}> <SUBJECT>` \\- Lists available note/unit numbers\\.\n"
+        f"• `/get <{group_name}> <SUBJECT> <NUMBER>` \\- Fetches an assignment file\\.\n"
+        f"• `/getnote <{group_name}> <SUBJECT> <NUMBER>` \\- Fetches a note/unit file\\.\n"
         "• `/suggestion` \\- Send a suggestion or feedback\\.\n"
         "• `/start` \\- To reset your year and name\\.\n"
         "• `/cancel` \\- To end any active command\\."
     )
     await update.message.reply_text(help_text, parse_mode='MarkdownV2')
 
-async def list_branches(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# UPDATED: This function now lists branches OR divisions
+async def list_branches_or_divisions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_user_setup(update, context): return
     year = context.user_data['year']
     year_display = context.user_data['year_display']
+    
     year_folder_id = await find_item_id_in_parent(year, GOOGLE_DRIVE_ROOT_FOLDER_ID)
     if not year_folder_id:
         await update.message.reply_text(f"🤷 No folder found for your year: `{escape_markdown(year_display)}`\\.", parse_mode='MarkdownV2')
         return
-    branches = await list_folders_in_parent(year_folder_id)
-    if not branches:
-        await update.message.reply_text(f"🤷 No branches found for `{escape_markdown(year_display)}`\\.", parse_mode='MarkdownV2')
+
+    items = await list_folders_in_parent(year_folder_id)
+    
+    if year == '1st_Year':
+        group_name_plural = "Divisions"
+    else:
+        group_name_plural = "Branches"
+
+    if not items:
+        await update.message.reply_text(f"🤷 No {group_name_plural.lower()} found for `{escape_markdown(year_display)}`\\.", parse_mode='MarkdownV2')
         return
-    branch_list = "\n".join(f"• `{escape_markdown(item)}`" for item in sorted(branches))
-    message = f"📚 *Available Branches for {escape_markdown(year_display)}:*\n\n{branch_list}"
+
+    item_list = "\n".join(f"• `{escape_markdown(item)}`" for item in sorted(items))
+    message = f"📚 *Available {group_name_plural} for {escape_markdown(year_display)}:*\n\n{item_list}"
     await update.message.reply_text(message, parse_mode='MarkdownV2')
 
+# UPDATED: Logic is now dynamic
 async def list_subjects(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_user_setup(update, context): return
-    if not context.args:
-        await update.message.reply_text("⚠️ Usage: `/subjects <BRANCH>`")
-        return
+    
     year = context.user_data['year']
     year_display = context.user_data['year_display']
-    branch = context.args[0].upper()
-    branch_folder_id = await resolve_path_to_id([year, branch])
-    if not branch_folder_id:
-        await update.message.reply_text(f"❌ Branch folder for `{escape_markdown(branch)}` not found in `{escape_markdown(year_display)}`\\.", parse_mode='MarkdownV2')
+
+    if year == '1st_Year':
+        usage = "`/subjects <DIVISION>`"
+        group_name_singular = "division"
+    else:
+        usage = "`/subjects <BRANCH>`"
+        group_name_singular = "branch"
+
+    if not context.args:
+        await update.message.reply_text(f"⚠️ Usage: {usage}")
         return
-    subjects = await list_folders_in_parent(branch_folder_id)
+        
+    group_name = context.args[0].upper()
+    
+    group_folder_id = await resolve_path_to_id([year, group_name])
+    if not group_folder_id:
+        await update.message.reply_text(f"❌ {group_name_singular.capitalize()} folder for `{escape_markdown(group_name)}` not found\\.", parse_mode='MarkdownV2')
+        return
+
+    subjects = await list_folders_in_parent(group_folder_id)
     if not subjects:
-        await update.message.reply_text(f"🤷 No subjects found for branch `{escape_markdown(branch)}`\\.", parse_mode='MarkdownV2')
+        await update.message.reply_text(f"🤷 No subjects found for {group_name_singular} `{escape_markdown(group_name)}`\\.", parse_mode='MarkdownV2')
         return
+
     subject_list = "\n".join(f"• `{escape_markdown(item)}`" for item in sorted(subjects))
-    message = f"📖 *Subjects for {escape_markdown(year_display)}/{escape_markdown(branch)}:*\n\n{subject_list}"
+    message = f"📖 *Subjects for {escape_markdown(year_display)}/{escape_markdown(group_name)}:*\n\n{subject_list}"
     await update.message.reply_text(message, parse_mode='MarkdownV2')
 
+# UPDATED: Logic is now dynamic
 async def list_assignments(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_user_setup(update, context): return
-    if len(context.args) != 2:
-        await update.message.reply_text("⚠️ Usage: `/assignments <BRANCH> <SUBJECT>`")
-        return
+    
     year = context.user_data['year']
-    branch, subject = context.args[0].upper(), context.args[1].upper()
-    assignments_folder_id = await resolve_path_to_id([year, branch, subject, "assignments"])
-    if not assignments_folder_id:
-        await update.message.reply_text(f"❌ No `assignments` folder found for `{escape_markdown(branch)}/{escape_markdown(subject)}`\\.", parse_mode='MarkdownV2')
+
+    if year == '1st_Year':
+        usage = "`/assignments <DIVISION> <SUBJECT>`"
+    else:
+        usage = "`/assignments <BRANCH> <SUBJECT>`"
+
+    if len(context.args) != 2:
+        await update.message.reply_text(f"⚠️ Usage: {usage}")
         return
+        
+    group_name, subject = context.args[0].upper(), context.args[1].upper()
+    
+    assignments_folder_id = await resolve_path_to_id([year, group_name, subject, "Assignments"])
+    if not assignments_folder_id:
+        await update.message.reply_text(f"❌ No `Assignments` folder found for `{escape_markdown(group_name)}/{escape_markdown(subject)}`\\.", parse_mode='MarkdownV2')
+        return
+
     service = get_drive_service()
     query = f"'{assignments_folder_id}' in parents and trashed = false"
     response = service.files().list(q=query, spaces='drive', fields='files(name)').execute()
     files = response.get('files', [])
+    
     assignment_numbers = {int(m.group(1)) for item in files if (m := re.search(r'assignment_(\d+)', item['name'], re.IGNORECASE))}
     if not assignment_numbers:
-        await update.message.reply_text(f"🤷 No assignments found for `{escape_markdown(branch)}/{escape_markdown(subject)}`\\.", parse_mode='MarkdownV2')
+        await update.message.reply_text(f"🤷 No assignments found for `{escape_markdown(group_name)}/{escape_markdown(subject)}`\\.", parse_mode='MarkdownV2')
         return
+
     number_list = "\n".join(f"• `Assignment {num}`" for num in sorted(list(assignment_numbers)))
-    message = f"📄 *Assignments for {escape_markdown(branch)}/{escape_markdown(subject)}:*\n\n{number_list}"
+    message = f"📄 *Assignments for {escape_markdown(group_name)}/{escape_markdown(subject)}:*\n\n{number_list}"
     await update.message.reply_text(message, parse_mode='MarkdownV2')
 
+# UPDATED: Logic is now dynamic
 async def get_assignment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_user_setup(update, context): return
-    if len(context.args) != 3:
-        await update.message.reply_text("⚠️ Usage: `/get <BRANCH> <SUBJECT> <NUMBER>`")
-        return
+    
     year = context.user_data['year']
-    branch, subject, number_str = context.args[0].upper(), context.args[1].upper(), context.args[2]
+
+    if year == '1st_Year':
+        usage = "`/get <DIVISION> <SUBJECT> <NUMBER>`"
+    else:
+        usage = "`/get <BRANCH> <SUBJECT> <NUMBER>`"
+
+    if len(context.args) != 3:
+        await update.message.reply_text(f"⚠️ Usage: {usage}")
+        return
+        
+    group_name, subject, number_str = context.args[0].upper(), context.args[1].upper(), context.args[2]
+
     try:
         assignment_number = int(number_str)
     except ValueError:
@@ -324,7 +382,7 @@ async def get_assignment(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     placeholder_message = await update.message.reply_text("⏳ Getting your file, please wait\\.\\.\\.", parse_mode='MarkdownV2')
 
-    cached_file_id = get_cached_assignment_id(year, branch, subject, assignment_number)
+    cached_file_id = get_cached_assignment_id(year, group_name, subject, assignment_number)
     if cached_file_id:
         try:
             await context.bot.send_document(chat_id=update.effective_chat.id, document=cached_file_id)
@@ -333,16 +391,13 @@ async def get_assignment(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except TelegramError as e:
             logger.warning(f"Failed to send cached file {cached_file_id}, re-downloading. Error: {e}")
 
-    assignments_folder_id = await resolve_path_to_id([year, branch, subject, "assignments"])
+    assignments_folder_id = await resolve_path_to_id([year, group_name, subject, "Assignments"])
     if not assignments_folder_id:
         await placeholder_message.edit_text("❌ Assignment folder not found\\.", parse_mode='MarkdownV2')
         return
 
     service = get_drive_service()
-    if not service:
-        await placeholder_message.edit_text("❌ Could not connect to Google Drive service.", parse_mode='MarkdownV2')
-        return
-    query = f"'{assignments_folder_id}' in parents and trashed = false and name contains 'assignment_{assignment_number}'"
+    query = f"'{assignments_folder_id}' in parents and trashed = false and name ~* 'assignment_?{assignment_number}[^0-9]'"
     response = service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
     files = response.get('files', [])
     if not files:
@@ -355,41 +410,65 @@ async def get_assignment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file_content = await download_file_from_drive(file_id)
     if file_content:
         sent_message = await context.bot.send_document(chat_id=update.effective_chat.id, document=file_content, filename=file_name)
-        cache_assignment_id(year, branch, subject, assignment_number, sent_message.document.file_id)
+        cache_assignment_id(year, group_name, subject, assignment_number, sent_message.document.file_id)
         await placeholder_message.delete()
     else:
         await placeholder_message.edit_text("⚠️ Error downloading the file from Google Drive\\.", parse_mode='MarkdownV2')
 
+# UPDATED: Logic is now dynamic
 async def list_notes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_user_setup(update, context): return
-    if len(context.args) != 2:
-        await update.message.reply_text("⚠️ Usage: `/notes <BRANCH> <SUBJECT>`")
-        return
+
     year = context.user_data['year']
-    branch, subject = context.args[0].upper(), context.args[1].upper()
-    notes_folder_id = await resolve_path_to_id([year, branch, subject, "Notes"])
-    if not notes_folder_id:
-        await update.message.reply_text(f"❌ No `Notes` folder found for `{escape_markdown(branch)}/{escape_markdown(subject)}`\\.", parse_mode='MarkdownV2')
+
+    if year == '1st_Year':
+        usage = "`/notes <DIVISION> <SUBJECT>`"
+    else:
+        usage = "`/notes <BRANCH> <SUBJECT>`"
+
+    if len(context.args) != 2:
+        await update.message.reply_text(f"⚠️ Usage: {usage}")
         return
+        
+    group_name, subject = context.args[0].upper(), context.args[1].upper()
+    
+    notes_folder_id = await resolve_path_to_id([year, group_name, subject, "Notes"])
+    if not notes_folder_id:
+        await update.message.reply_text(f"❌ No `Notes` folder found for `{escape_markdown(group_name)}/{escape_markdown(subject)}`\\.", parse_mode='MarkdownV2')
+        return
+
     service = get_drive_service()
     query = f"'{notes_folder_id}' in parents and trashed = false"
     response = service.files().list(q=query, spaces='drive', fields='files(name)').execute()
     files = response.get('files', [])
+    
     note_numbers = {int(m.group(1)) for item in files if (m := re.search(r'(?:unit|note)_(\d+)', item['name'], re.IGNORECASE))}
+    
     if not note_numbers:
-        await update.message.reply_text(f"🤷 No notes found for `{escape_markdown(branch)}/{escape_markdown(subject)}`\\.", parse_mode='MarkdownV2')
+        await update.message.reply_text(f"🤷 No notes found for `{escape_markdown(group_name)}/{escape_markdown(subject)}`\\.", parse_mode='MarkdownV2')
         return
+        
     note_list = "\n".join(f"• `Unit {num}`" for num in sorted(list(note_numbers)))
-    message = f"📝 *Available Notes/Units for {escape_markdown(branch)}/{escape_markdown(subject)}:*\n\n{note_list}"
+    message = f"📝 *Available Notes/Units for {escape_markdown(group_name)}/{escape_markdown(subject)}:*\n\n{note_list}"
     await update.message.reply_text(message, parse_mode='MarkdownV2')
 
+# UPDATED: Logic is now dynamic
 async def get_note(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_user_setup(update, context): return
-    if len(context.args) != 3:
-        await update.message.reply_text("⚠️ Usage: `/getnote <BRANCH> <SUBJECT> <NUMBER>`")
-        return
+    
     year = context.user_data['year']
-    branch, subject, number_str = context.args[0].upper(), context.args[1].upper(), context.args[2]
+
+    if year == '1st_Year':
+        usage = "`/getnote <DIVISION> <SUBJECT> <NUMBER>`"
+    else:
+        usage = "`/getnote <BRANCH> <SUBJECT> <NUMBER>`"
+    
+    if len(context.args) != 3:
+        await update.message.reply_text(f"⚠️ Usage: {usage}")
+        return
+    
+    group_name, subject, number_str = context.args[0].upper(), context.args[1].upper(), context.args[2]
+
     try:
         note_number = int(number_str)
     except ValueError:
@@ -398,7 +477,7 @@ async def get_note(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     placeholder_message = await update.message.reply_text("⏳ Getting your file, please wait\\.\\.\\.", parse_mode='MarkdownV2')
 
-    cached_file_id = get_cached_note_id(year, branch, subject, note_number)
+    cached_file_id = get_cached_note_id(year, group_name, subject, note_number)
     if cached_file_id:
         try:
             await context.bot.send_document(chat_id=update.effective_chat.id, document=cached_file_id)
@@ -407,16 +486,13 @@ async def get_note(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except TelegramError as e:
             logger.warning(f"Failed to send cached file {cached_file_id}, re-downloading. Error: {e}")
 
-    notes_folder_id = await resolve_path_to_id([year, branch, subject, "Notes"])
+    notes_folder_id = await resolve_path_to_id([year, group_name, subject, "Notes"])
     if not notes_folder_id:
         await placeholder_message.edit_text("❌ Notes folder not found\\.", parse_mode='MarkdownV2')
         return
     
     service = get_drive_service()
-    if not service:
-        await placeholder_message.edit_text("❌ Could not connect to Google Drive service.", parse_mode='MarkdownV2')
-        return
-    query = f"'{notes_folder_id}' in parents and trashed = false and (name contains 'unit_{note_number}' or name contains 'note_{note_number}')"
+    query = f"'{notes_folder_id}' in parents and trashed = false and (name ~* '(unit|note)_?{note_number}[^0-9]')"
     response = service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
     files = response.get('files', [])
     
@@ -430,7 +506,7 @@ async def get_note(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file_content = await download_file_from_drive(file_id)
     if file_content:
         sent_message = await context.bot.send_document(chat_id=update.effective_chat.id, document=file_content, filename=file_name)
-        cache_note_id(year, branch, subject, note_number, sent_message.document.file_id)
+        cache_note_id(year, group_name, subject, note_number, sent_message.document.file_id)
         await placeholder_message.delete()
     else:
         await placeholder_message.edit_text("⚠️ Error downloading the file from Google Drive\\.", parse_mode='MarkdownV2')
@@ -479,7 +555,9 @@ def main():
             GET_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
             MAIN_MENU: [
                 CommandHandler("help", help_command),
-                CommandHandler("branches", list_branches),
+                # UPDATED: New command handlers for dynamic structure
+                CommandHandler("branches", list_branches_or_divisions),
+                CommandHandler("divisions", list_branches_or_divisions),
                 CommandHandler("subjects", list_subjects),
                 CommandHandler("assignments", list_assignments),
                 CommandHandler("get", get_assignment),
